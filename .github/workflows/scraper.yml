@@ -1,10 +1,7 @@
 name: Konaklama Scraper Bot
 
 on:
-  schedule:
-    # Her 15 dakikada bir çalıştır (* /15 * * * * ama GitHub bazen gecikmeli çalıştırabilir)
-    - cron: '*/15 * * * *'
-  workflow_dispatch: # GitHub üzerinden manuel olarak tetikleyebilmek için
+  workflow_dispatch: # Sadece cron-job.org tetiklemesiyle çalışır
 
 jobs:
   scrape:
