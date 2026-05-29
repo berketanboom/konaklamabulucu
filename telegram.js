@@ -11,9 +11,10 @@ export async function sendTelegramNotification(roomInfo) {
     return;
   }
 
-  const { source, title, price, url, isNew } = roomInfo;
+  const { source, title, price, url, isNew, deepDetails } = roomInfo;
   
   const statusLine = isNew ? '✨ <i>(Sisteme yeni eklendi)</i>' : '♻️ <i>(Önceden doluydu, tekrar müsait oldu!)</i>';
+  const detailsBlock = deepDetails ? `\n📜 <b>Ek Detaylar:</b>\n${deepDetails}\n` : '';
 
   const message = `🚨 <b>YENİ ODA BULDUM!</b> 🚨
 
@@ -21,7 +22,7 @@ export async function sendTelegramNotification(roomInfo) {
 🛏 <b>Detaylar:</b> ${title}
 💰 <b>Fiyat:</b> €${price}
 ${statusLine}
-
+${detailsBlock}
 🔗 <a href="${url}">Hemen İlana Git</a>`;
 
   const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;

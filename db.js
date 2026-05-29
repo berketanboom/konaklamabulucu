@@ -13,6 +13,15 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 export const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_KEY || 'placeholder');
 
+export async function getExistingKeys() {
+  const { data, error } = await supabase.from('listings').select('title, url');
+  if (error) {
+    console.error('Error fetching existing keys:', error);
+    return new Set();
+  }
+  return new Set(data.map(d => `${d.source}-${d.title}`));
+}
+
 /**
  * Checks the newly fetched listings against the database.
  * Adds new ones, updates available status.

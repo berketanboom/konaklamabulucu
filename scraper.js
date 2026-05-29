@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { processListings } from './db.js';
+import { processListings, getExistingKeys } from './db.js';
 
 const CANVAS_UTRECHT_URL = 'https://www.canvas-world.com/en/locations/netherlands/utrecht/canvas-utrecht';
 const CANVAS_LONDON_URL = 'https://www.canvas-world.com/en/locations/united-kingdom/london/walthamstow';
@@ -469,6 +469,55 @@ async function runScraper() {
 
     // Process all fetched listings
     if (allListings.length > 0) {
+      console.log(`Checking which of the ${allListings.length} rooms are new for deep scraping...`);
+      const existingKeys = await getExistingKeys();
+      
+      for (let listing of allListings) {
+          const key = `${listing.source}-${listing.title}`;
+          if (!existingKeys.has(key) && listing.available && listing.url && !listing.url.includes('search') && !listing.url.includes('huuraanbod')) {
+              console.log(`Deep scraping new listing: ${listing.title}`);
+              try {
+                  const detailPage = await context.newPage();
+                  await detailPage.goto(listing.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                  await detailPage.waitForTimeout(2000);
+                  const text = await detailPage.evaluate(() => document.body.innerText);
+                  let details = '';
+                  
+                  if (listing.source === 'SSH') {
+                      const matchId = text.match(/O-number:?\s*(\S+)/i) || text.match(/Accommodation number:?\s*(\S+)/i);
+                      if (matchId) details += `🔖 İlan No: ${matchId[1]}\n`;
+                      if (text.toLowerCase().includes('deposit')) {
+                          const depMatch = text.match(/deposit.*?€?\s*(\d+)/i);
+                          if (depMatch) details += `💰 Depozito: €${depMatch[1]}\n`;
+                      }
+                  } else if (listing.source === 'Holland2Stay') {
+                      const availMatch = text.match(/Available from\s*(\d{2}-\d{2}-\d{4})/i);
+                      if (availMatch) details += `📅 Uygunluk: ${availMatch[1]}\n`;
+                      const depMatch = text.match(/Deposit\s*€\s*([\d.,]+)/i);
+                      if (depMatch) details += `💰 Depozito: €${depMatch[1]}\n`;
+                  } else if (listing.source === 'Canvas') {
+                      const depMatch = text.match(/Deposit\s*£?\s*(\d+)/i);
+                      if (depMatch) details += `💰 Depozito: £${depMatch[1]}\n`;
+                      const termMatch = text.match(/Tenancy length[^\d]*(\d+\s*weeks)/i);
+                      if (termMatch) details += `📜 Kontrat: ${termMatch[1]}\n`;
+                  } else if (listing.source === 'Xior') {
+                      const depMatch = text.match(/Deposit[^\d]*€\s*([\d.,]+)/i);
+                      if (depMatch) details += `💰 Depozito: €${depMatch[1]}\n`;
+                  } else if (listing.source === 'Plaza') {
+                      const availMatch = text.match(/Available from[^\d]*(\d{2}-\d{2}-\d{4})/i) || text.match(/Beschikbaar per[^\d]*(\d{2}-\d{2}-\d{4})/i);
+                      if (availMatch) details += `📅 Uygunluk: ${availMatch[1]}\n`;
+                  }
+                  
+                  if (details.length > 0) {
+                      listing.deepDetails = details.trim();
+                  }
+                  await detailPage.close();
+              } catch(e) {
+                  console.error(`Error deep scraping ${listing.url}:`, e.message);
+              }
+          }
+      }
+      
       console.log(`Processing total ${allListings.length} rooms to Supabase...`);
       await processListings(allListings);
     } else {
