@@ -1,25 +1,24 @@
 import { chromium } from 'playwright';
 import { processListings } from './db.js';
 
-const CANVAS_URL = 'https://www.canvas-world.com/en/locations/netherlands/utrecht/canvas-utrecht';
+const CANVAS_UTRECHT_URL = 'https://www.canvas-world.com/en/locations/netherlands/utrecht/canvas-utrecht';
+const CANVAS_LONDON_URL = 'https://www.canvas-world.com/en/locations/united-kingdom/london/walthamstow';
 const THE_FIZZ_URL = 'https://www.the-fizz.com/student-accommodation/utrecht/';
 const NEWNEWNEW_URL = 'https://newnewnew.space/en/search?city=Utrecht';
 const XIOR_URL = 'https://www.xior.be/en/city/utrecht';
 const H2S_URL = 'https://holland2stay.com/residences.html?available_to_book=179&city=29';
 
-async function scrapeCanvas(page) {
-  console.log('Scraping Canvas Utrecht...');
+async function scrapeCanvas(page, url, sourceName) {
+  console.log(`Scraping Canvas ${sourceName}...`);
   try {
-    // Canvas Utrecht sitesinin yeni adresi üzerinden veri çekiyoruz.
-    // Zaman aşımı ve bot engelini aşmak için doğrudan global fetch kullanıyoruz.
-    const res = await fetch(CANVAS_URL, {
+    const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
 
     if (!res.ok) {
-      throw new Error(`Canvas Utrecht sitesinden veri alınamadı. HTTP Status: ${res.status}`);
+      throw new Error(`Canvas ${sourceName} sitesinden veri alınamadı. HTTP Status: ${res.status}`);
     }
 
     const html = await res.text();
@@ -44,23 +43,29 @@ async function scrapeCanvas(page) {
     }
 
     const listings = rawRooms.map(r => {
-      const title = r.itemName?.value || r.overwriteName?.value || 'Bilinmeyen Oda';
+      let titleRaw = r.itemName?.value || r.overwriteName?.value || 'Bilinmeyen Oda';
+      let title = `[${sourceName}] ${titleRaw}`;
       
       const priceStr = r.overwritePrice?.value || r.price?.value || '0';
       const parts = priceStr.split('=');
       const priceVal = parts.length > 1 ? parts[1] : parts[0];
       const price = parseFloat(priceVal.replace(',', '.')) || 0;
       
-      // unitsAvailable.value > 0 ise odanın müsait olduğunu anlıyoruz
       const availableVal = r.unitsAvailable?.value;
-      const available = availableVal !== undefined && parseInt(availableVal) > 0;
+      let available = false;
+      if (availableVal !== undefined && availableVal !== null) {
+        available = parseInt(availableVal) > 0;
+      } else {
+        const statusStr = r.availabilityStatus?.value || '';
+        available = statusStr.toLowerCase().includes('available');
+      }
 
       return {
         source: 'Canvas',
         title,
         price,
         available,
-        url: CANVAS_URL
+        url: url
       };
     });
 
@@ -83,9 +88,16 @@ async function scrapeTheFizz(page) {
     const popups = document.querySelectorAll('.popup--apartments'); 
 
     popups.forEach(popup => {
-      const title = popup.querySelector('h3')?.textContent?.trim() || 'Bilinmeyen Oda Türü';
+      let title = popup.querySelector('h3')?.textContent?.trim() || 'Bilinmeyen Oda Türü';
       
       const text = popup.innerText || '';
+      
+      const sizeMatch = text.match(/(\d+\s*m²)/i);
+      if (sizeMatch) {
+         title = `[Utrecht] ${title} (${sizeMatch[1]})`;
+      } else {
+         title = `[Utrecht] ${title}`;
+      }
       
       // Fizz sitesinde Almanca "Momentan sind keine... verfügbar" veya İngilizce "no apartments available" yazar
       const isUnavailable = text.toLowerCase().includes('momentan sind keine') || text.toLowerCase().includes('fully booked');
@@ -123,11 +135,18 @@ async function scrapeNewNewNew(page) {
       const results = [];
       const cards = document.querySelectorAll('.listing, .property-card, .search-result, article, .item, .card');
       cards.forEach(card => {
-        const title = card.querySelector('h2, h3, .title, .name')?.textContent?.trim();
+        let title = card.querySelector('h2, h3, .title, .name')?.textContent?.trim();
         const priceText = card.querySelector('.price, .rent, strong')?.textContent?.trim() || '';
         const link = card.querySelector('a')?.href;
+        const text = card.innerText || '';
         
         if (title && title.length > 0) {
+          const sizeMatch = text.match(/(\d+\s*m²)/i);
+          const cityMatch = text.match(/Utrecht/i);
+          const city = cityMatch ? 'Utrecht' : 'NewNewNew';
+          
+          title = `[${city}] ${title}`;
+          if (sizeMatch) title += ` (${sizeMatch[1]})`;
           const priceMatch = priceText.match(/€\s*(\d+(?:[.,]\d+)?)/);
           const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
           results.push({
@@ -160,11 +179,18 @@ async function scrapeXior(page) {
       const results = [];
       const cards = document.querySelectorAll('.room-card, .property-card, article, .building-card, .xior-card');
       cards.forEach(card => {
-        const title = card.querySelector('h2, h3, .title')?.textContent?.trim();
+        let title = card.querySelector('h2, h3, .title')?.textContent?.trim();
         const priceText = card.querySelector('.price, .rent')?.textContent?.trim() || '';
         const link = card.querySelector('a')?.href;
+        const text = card.innerText || '';
         
         if (title && title.length > 0) {
+          const sizeMatch = text.match(/(\d+\s*m²)/i);
+          const cityMatch = text.match(/Utrecht/i);
+          const city = cityMatch ? 'Utrecht' : 'Xior';
+          
+          title = `[${city}] ${title}`;
+          if (sizeMatch) title += ` (${sizeMatch[1]})`;
           const priceMatch = priceText.match(/€?\s*(\d+(?:[.,]\d+)?)/);
           const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
           results.push({
@@ -207,12 +233,19 @@ async function scrapeHolland2Stay(page) {
       const results = [];
       const cards = document.querySelectorAll('.residence-item, .property-item, .item, li.item');
       cards.forEach(card => {
-        const title = card.querySelector('.product-name, h2, h3')?.textContent?.trim();
+        let title = card.querySelector('.product-name, h2, h3')?.textContent?.trim();
         const priceText = card.querySelector('.price')?.textContent?.trim() || '';
         const status = card.querySelector('.status, .availability')?.textContent?.trim() || '';
         const link = card.querySelector('a')?.href;
+        const text = card.innerText || '';
         
         if (title && title.length > 0) {
+          const sizeMatch = text.match(/(\d+\s*m²)/i);
+          const cityMatch = text.match(/(Utrecht|Eindhoven|Rotterdam|Amsterdam|Den Haag|Delft|Groningen|Maastricht)/i);
+          const city = cityMatch ? cityMatch[1] : 'H2S';
+          
+          title = `[${city}] ${title}`;
+          if (sizeMatch) title += ` (${sizeMatch[1]})`;
           const priceMatch = priceText.match(/€?\s*(\d+(?:[.,]\d+)?)/);
           const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
           const isAvailable = !status.toLowerCase().includes('booked') && !status.toLowerCase().includes('unavailable');
@@ -237,6 +270,136 @@ async function scrapeHolland2Stay(page) {
   }
 }
 
+async function scrapeSSH(page) {
+  console.log('Scraping SSH Short Stay...');
+  try {
+    // Navigate to login
+    await page.goto('https://mijn.sshxl.nl/inloggen', { waitUntil: 'networkidle' });
+    
+    // Check if we need to login
+    const currentUrl = page.url();
+    if (currentUrl.includes('inloggen')) {
+      console.log('SSH: Logging in...');
+      const email = process.env.SSH_EMAIL || 'berke.tan.tabak@gmail.com';
+      const pwd = process.env.SSH_PASSWORD || '29100Btt!';
+      
+      await page.fill('input[name="username"]', email);
+      await page.click('button[type="submit"]');
+      
+      // Wait for password field
+      await page.waitForSelector('input[name="password"]', { timeout: 15000 });
+      await page.fill('input[name="password"]', pwd);
+      await page.click('button[type="submit"]');
+      
+      await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => console.log('No navigation after SSH login, proceeding'));
+    }
+    
+    // Navigate to rental offers
+    await page.goto('https://www.sshxl.nl/en/rental-offer/short-stay', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(5000); // Wait for rooms to load
+    
+    const listings = await page.evaluate(() => {
+      const results = [];
+      const cards = document.querySelectorAll('.card, .property-card, article');
+      cards.forEach(card => {
+        let title = card.querySelector('h2, h3, .title, .address')?.textContent?.trim();
+        const priceText = card.querySelector('.price, .rent, strong')?.textContent?.trim() || '';
+        const link = card.querySelector('a')?.href;
+        const text = card.innerText || '';
+        
+        if (title && title.length > 0) {
+          const sizeMatch = text.match(/(\d+\s*m²)/i);
+          const cityMatch = text.match(/(Utrecht|Rotterdam|Zwolle|Tilburg|Groningen|Amersfoort)/i);
+          const city = cityMatch ? cityMatch[1] : 'SSH';
+          
+          title = `[${city}] ${title}`;
+          if (sizeMatch) title += ` (${sizeMatch[1]})`;
+          const priceMatch = priceText.match(/€?\s*(\d+(?:[.,]\d+)?)/);
+          const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
+          results.push({
+            source: 'SSH',
+            title,
+            price,
+            available: true,
+            url: link || 'https://www.sshxl.nl/en/rental-offer/short-stay'
+          });
+        }
+      });
+      return results;
+    });
+    
+    console.log(`SSH: Found ${listings.length} rooms.`);
+    return listings;
+  } catch (e) {
+    console.error('SSH scraping error:', e.message);
+    return [];
+  }
+}
+
+async function scrapePlaza(page) {
+  console.log('Scraping Plaza...');
+  try {
+    await page.goto('https://plaza.newnewnew.space/aanbod/wonen', { waitUntil: 'networkidle', timeout: 30000 });
+    
+    const listings = await page.evaluate(() => {
+        const results = [];
+        const cards = document.querySelectorAll('a.zds-property-card');
+        
+        cards.forEach(card => {
+            const url = card.href;
+            const priceMatch = card.innerText.match(/€\s*(\d+(?:[.,]\d+)?)/);
+            const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
+            
+            let title = 'Unknown Plaza Room';
+            let city = 'Plaza';
+            const locationMatches = card.innerText.match(/Amersfoort|Rotterdam|Bochum|Deventer|Maastricht|Rijswijk|Amsterdam|Arnhem|Delft|Breda|Geldrop|Groot-Ammers|Utrecht/i);
+            
+            if (locationMatches) {
+               city = locationMatches[0];
+               const textParts = card.innerText.split(locationMatches[0]);
+               if (textParts.length > 0) {
+                   const titleLines = textParts[0].split('\n').filter(l => l.trim().length > 3 && !l.includes('€'));
+                   if (titleLines.length > 0) {
+                       title = titleLines[titleLines.length - 1].trim();
+                   }
+               }
+            }
+            
+            const sizeMatch = card.innerText.match(/(\d+\s*m²)/i);
+            title = `[${city}] ${title}`;
+            if (sizeMatch) title += ` (${sizeMatch[1]})`;
+            
+            results.push({
+               source: 'Plaza',
+               title: title,
+               price: price,
+               available: true,
+               url: url
+            });
+        });
+        
+        return results;
+    });
+    
+    console.log(`Plaza: Found ${listings.length} rooms (Total, Needs Filtering).`);
+    
+    // In theory we only want Utrecht, but Plaza's structure makes it hard to be 100% sure from just text.
+    // We will include them all for now or try to filter by title/location text if 'Utrecht' exists
+    const utrechtListings = listings.filter(l => l.url.toLowerCase().includes('utrecht') || l.title.toLowerCase().includes('utrecht'));
+    
+    // If none specifically mention Utrecht in URL/title, just return all for safety or return empty
+    // Actually the safest is returning all since user wanted Plaza. Let's return the filtered if there are any, else all.
+    const finalListings = utrechtListings.length > 0 ? utrechtListings : listings;
+    
+    console.log(`Plaza: Returning ${finalListings.length} rooms.`);
+    return finalListings;
+    
+  } catch(e) {
+    console.error('Plaza scraping error:', e.message);
+    return [];
+  }
+}
+
 async function runScraper() {
   console.log('Starting the scraper...');
   const browser = await chromium.launch({ headless: true });
@@ -248,8 +411,10 @@ async function runScraper() {
 
     // Canvas scraping
     try {
-      const canvasRooms = await scrapeCanvas(page);
-      allListings = [...allListings, ...canvasRooms];
+      const canvasUtrechtRooms = await scrapeCanvas(page, CANVAS_UTRECHT_URL, 'Utrecht');
+      allListings = [...allListings, ...canvasUtrechtRooms];
+      const canvasLondonRooms = await scrapeCanvas(page, CANVAS_LONDON_URL, 'London Walthamstow');
+      allListings = [...allListings, ...canvasLondonRooms];
     } catch (e) {
       console.error('Error scraping Canvas:', e);
     }
@@ -284,6 +449,22 @@ async function runScraper() {
       allListings = [...allListings, ...h2sRooms];
     } catch (e) {
       console.error('Error scraping Holland2Stay:', e);
+    }
+    
+    // Plaza scraping
+    try {
+      const plazaRooms = await scrapePlaza(page);
+      allListings = [...allListings, ...plazaRooms];
+    } catch (e) {
+      console.error('Error scraping Plaza:', e);
+    }
+    
+    // SSH scraping
+    try {
+      const sshRooms = await scrapeSSH(page);
+      allListings = [...allListings, ...sshRooms];
+    } catch (e) {
+      console.error('Error scraping SSH:', e);
     }
 
     // Process all fetched listings

@@ -28,4 +28,6 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SSH_EMAIL: ${{ secrets.SSH_EMAIL }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: node scraper.js

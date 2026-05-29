@@ -13,11 +13,16 @@ export async function sendTelegramNotification(roomInfo) {
 
   const { source, title, price, url, isNew } = roomInfo;
   
-  const message = `🚨 YENİ/BOŞ ODA BULDUM! 🚨
-Kaynak: ${source}
-Oda Tipi: ${title}
-Fiyat: €${price}
-Link: ${url}`;
+  const statusLine = isNew ? '✨ <i>(Sisteme yeni eklendi)</i>' : '♻️ <i>(Önceden doluydu, tekrar müsait oldu!)</i>';
+
+  const message = `🚨 <b>YENİ ODA BULDUM!</b> 🚨
+
+🏢 <b>Kaynak:</b> ${source}
+🛏 <b>Detaylar:</b> ${title}
+💰 <b>Fiyat:</b> €${price}
+${statusLine}
+
+🔗 <a href="${url}">Hemen İlana Git</a>`;
 
   const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
@@ -30,12 +35,14 @@ Link: ${url}`;
       body: JSON.stringify({
         chat_id: CHAT_ID,
         text: message,
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
       }),
     });
 
     if (!response.ok) {
-      console.error(`Telegram API responded with status ${response.status}`);
+      const errText = await response.text();
+      console.error(`Telegram API responded with status ${response.status}: ${errText}`);
     } else {
       console.log('Telegram notification sent successfully.');
     }
