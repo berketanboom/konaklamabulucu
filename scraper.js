@@ -307,7 +307,7 @@ async function scrapeSSH(page) {
         const link = card.querySelector('a')?.href;
         const text = card.innerText || '';
         
-        if (title && title.length > 0) {
+        if (title && title.length > 0 && !title.toLowerCase().includes('first-come-first-serve')) {
           const sizeMatch = text.match(/(\d+\s*m²)/i);
           const cityMatch = text.match(/(Utrecht|Rotterdam|Zwolle|Tilburg|Groningen|Amersfoort)/i);
           const city = cityMatch ? cityMatch[1] : 'SSH';
