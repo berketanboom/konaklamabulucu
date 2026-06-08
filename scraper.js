@@ -2,7 +2,6 @@ import { chromium } from 'playwright';
 import { processListings, getExistingKeys } from './db.js';
 
 const CANVAS_UTRECHT_URL = 'https://www.canvas-world.com/en/locations/netherlands/utrecht/canvas-utrecht';
-const CANVAS_LONDON_URL = 'https://www.canvas-world.com/en/locations/united-kingdom/london/walthamstow';
 const THE_FIZZ_URL = 'https://www.the-fizz.com/student-accommodation/utrecht/';
 const NEWNEWNEW_URL = 'https://newnewnew.space/en/search?city=Utrecht';
 const XIOR_URL = 'https://www.xior.be/en/city/utrecht';
@@ -84,7 +83,6 @@ async function scrapeTheFizz(page) {
 
   const listings = await page.evaluate(() => {
     const results = [];
-    // Örnek seçiciler (Gerçek sitedeki sınıflara/ID'lere göre revize edilmelidir)
     const popups = document.querySelectorAll('.popup--apartments'); 
 
     popups.forEach(popup => {
@@ -103,11 +101,19 @@ async function scrapeTheFizz(page) {
       const isUnavailable = text.toLowerCase().includes('momentan sind keine') || text.toLowerCase().includes('fully booked');
       const available = !isUnavailable;
 
-      // Fiyat regex ile aranır (örnek: "€ 850" -> 850)
-      const priceMatch = text.match(/€\s*(\d+(?:[.,]\d+)?)/);
+      // Fiyat regex ile aranır (örnek: "€ 850" veya "850 €")
+      const priceMatch = text.match(/€\s*(\d+(?:[.,]\d+)?)/) || text.match(/(\d+(?:[.,]\d+)?).{0,3}€/);
       const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
       
-      const url = 'https://www.the-fizz.com/student-accommodation/utrecht/';
+      let url = 'https://www.the-fizz.com/student-accommodation/utrecht/';
+      const links = Array.from(popup.querySelectorAll('a'));
+      const bookBtn = links.find(a => a.innerText && (a.innerText.toLowerCase().includes('jetzt buchen') || a.innerText.toLowerCase().includes('book now')));
+      if (bookBtn && bookBtn.href) {
+        url = bookBtn.href;
+      } else if (available) {
+        // Eğer buton bulunamazsa ve oda müsaitse, doğrudan arama sayfasına yönlendir.
+        url = 'https://www.the-fizz.com/en/search-nl#/searchcriteria=BUILDING:FIZZ_UTRECHT;AREA:UTRECHT;';
+      }
 
       results.push({
         source: 'Fizz',
@@ -413,8 +419,6 @@ async function runScraper() {
     try {
       const canvasUtrechtRooms = await scrapeCanvas(page, CANVAS_UTRECHT_URL, 'Utrecht');
       allListings = [...allListings, ...canvasUtrechtRooms];
-      const canvasLondonRooms = await scrapeCanvas(page, CANVAS_LONDON_URL, 'London Walthamstow');
-      allListings = [...allListings, ...canvasLondonRooms];
     } catch (e) {
       console.error('Error scraping Canvas:', e);
     }
